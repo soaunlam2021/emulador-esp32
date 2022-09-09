@@ -1,0 +1,116 @@
+# ---------------------------------------------------------------------
+# Crear el volumen:
+# ---------------------------------------------------------------------
+
+docker volume create --name work
+
+
+
+
+# ---------------------------------------------------------------------
+# Ejecucion
+# ---------------------------------------------------------------------
+
+# Iniciar el contenedor con el volumen asignado, con el USB conectado:
+docker run -v work:/work -ti --device=/dev/ttyUSB0 soaunlam/qemu_esp32
+
+# Sin USB
+docker run -v work:/work -ti soaunlam/qemu_esp32
+
+# ---------------------------------------------------------------------
+# Pasos Solo la primera vez:
+# ---------------------------------------------------------------------
+
+# Copiar el repositorio de trabajo
+cp -r /opt/esp-idf/examples/get-started/hello_world /work/
+
+cd /work/hello_world
+
+# Configurar el ambiente de compilacion y el chip a aplicar
+idf.py set-target esp32
+idf.py menuconfig
+
+# roms esp32 base para qemu (del hardware del lab)
+cp /opt/qemu_esp32/roms/rom1.bin . 
+cp /opt/qemu_esp32/roms/rom.bin . 
+cp /opt/esp-idf/components/esptool_py/esptool/test/images/partitions_singleapp.bin build/
+
+# ---------------------------------------------------------------------
+# Pasos compilacion:
+# ---------------------------------------------------------------------
+
+#cd /work/hello_world
+idf.py build
+
+# ----------------------------------
+# Solo si se utiliza dispositivo fisico.
+
+idf.py -p /dev/ttyUSB0 flash
+
+idf.py monitor -p /dev/ttyUSB0	
+
+# Salir del monitor CTRL+]
+#------------------------------------
+
+
+
+# ---------------------------------------------------------------------
+# Ejecucion qemu:
+# ---------------------------------------------------------------------
+# https://helpmanual.io/help/qemu-system-xtensa/
+
+
+# Actualizo la rom del binario, con el binario generado
+# Necesita ejecutar sobre rom.bin, para generar el archivo esp32flash.bin
+#  cd /work/hello_world
+
+# 1. Genero el archivo esp32flash.bin, que usa el emulador
+/opt/qemu_esp32/qemu_flash /work/hello_world/build/hello_world.bin
+
+# 2. Instancio el emulador.
+
+# Ejecuto qemu:
+/opt/qemu_esp32/xtensa-softmmu/qemu-system-xtensa -d guest_errors,unimp -machine esp32 -bios /work/hello_world/rom.bin -drive 'file=/work/hello_world/esp32flash.bin,if=mtd,format=raw'
+
+
+# ----------------------------------------------------------------------
+# Ejecucion para autotest.
+# Ejecuto solo por 10 segundo y termino a qemu.
+BIN_QEMU="nohup /opt/qemu_esp32/xtensa-softmmu/qemu-system-xtensa -d guest_errors,unimp -machine esp32 -bios /work/hello_world/rom.bin -drive 'file=/work/hello_world/esp32flash.bin,if=mtd,format=raw' &"
+SHELL_KILL="ps -fu root | grep -v grep | grep qemu | cut -c6-16 | xargs kill -15"
+eval $BIN_QEMU;sleep 10;eval $SHELL_KILL
+
+# ---------------------------------------------------------------------
+#/opt/qemu_esp32/xtensa-softmmu/qemu-system-xtensa -d guest_errors,unimp  -cpu esp32 -M esp32 -m 4M  -s /work/hello_world/build/hello_world.bin
+#/opt/qemu_esp32/xtensa-softmmu/qemu-system-xtensa  -d guest_errors,unimp  -cpu esp32 -M esp32 -m 4M  -s
+
+# ---------------------------------------------------------------------
+# Generar los rom.bin, desde ESP32 fisico:
+# ---------------------------------------------------------------------
+/opt/esp-idf/components/esptool_py/esptool/esptool.py --chip esp32 -b 921600 -p /dev/ttyUSB0 dump_mem 0x40000000 0x000C2000 /work/hello_world/rom.bin
+/opt/esp-idf/components/esptool_py/esptool/esptool.py --chip esp32 -b 921600 -p /dev/ttyUSB0 dump_mem 0x3FF90000 0x00010000 /work/hello_world/rom1.bin
+
+# ---------------------------------------------------------------------
+# Errores conocidos:
+# ---------------------------------------------------------------------
+
+# Acceso al dispositivo /dev/ttyUSB0
+
+Probar la conexion con putty:
++---
+Serial line: /dev/ttyUSB0
+Speed: 115200
+Conection type: Serial
+
+# En el equipo editar el archivo agregar: 
+sudo gpasswd --add ${USER} dialout
+
+# Reiniciar la secion.
+cat < /dev/ttyUSB0
+
+##---------------------------------------------------------------------
+# Error al deployar en el hardware:
+Failed to connect to ESP32: Wrong boot mode detected (0x13)! The chip needs to be in download mode.
+
+Solucion: Presionar los dos t=botones por 10s al reiniciar el ESP32.
+
